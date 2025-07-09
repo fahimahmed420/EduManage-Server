@@ -42,7 +42,7 @@ connectToDB();
 
 // --- USERS ---
 // Create user
-app.post("/api/users", async (req, res) => {
+app.post("/users", async (req, res) => {
   try {
     const newUser = req.body;
     const result = await db.collection("users").insertOne(newUser);
@@ -53,8 +53,31 @@ app.post("/api/users", async (req, res) => {
   }
 });
 
+app.get("/users", async (req, res) => {
+  try {
+    const search = req.query.search || "";
+    const regex = new RegExp(search, "i");
+
+    const users = await db.collection("users").find({
+      $or: [
+        { name: { $regex: regex } },
+        { email: { $regex: regex } }
+      ]
+    }).toArray();
+
+    console.log("Sending users:", users.length);
+    res.send(users);
+  } catch (err) {
+    console.error("Failed to get users:", err);
+    res.status(500).send({ error: "Failed to fetch users" });
+  }
+});
+
+
+
+
 // Get user by email
-app.get("/api/users/:email", async (req, res) => {
+app.get("/users/:email", async (req, res) => {
   try {
     const email = req.params.email;
     const user = await db.collection("users").findOne({ email });
@@ -66,7 +89,7 @@ app.get("/api/users/:email", async (req, res) => {
 });
 
 // Update user by ID
-app.patch("/api/users/:id", async (req, res) => {
+app.patch("/users/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const updatedData = req.body;
@@ -80,9 +103,38 @@ app.patch("/api/users/:id", async (req, res) => {
   }
 });
 
+// update user role
+app.patch("/users/role/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const newRole = req.body.role;
+
+    if (!newRole) {
+      return res.status(400).send({ error: "Role is required in request body." });
+    }
+
+    const result = await db
+      .collection("users")
+      .updateOne(
+        { email },
+        { $set: { role: newRole } }
+      );
+
+    if (result.modifiedCount === 0) {
+      return res.status(404).send({ error: "User not found or role not changed." });
+    }
+
+    res.send({ success: true, message: `Role updated to ${newRole}` });
+  } catch (error) {
+    console.error("Error updating role:", error);
+    res.status(500).send({ error: "Failed to update user role" });
+  }
+});
+
+
 // --- TEACHER REQUESTS ---
 // Create teacher request
-app.post("/api/teacherRequests", async (req, res) => {
+app.post("/teacherRequests", async (req, res) => {
   try {
     const request = req.body;
     request.status = "pending";
@@ -95,7 +147,7 @@ app.post("/api/teacherRequests", async (req, res) => {
 });
 
 // Get all teacher requests (admin)
-app.get("/api/teacherRequests", async (req, res) => {
+app.get("/teacherRequests", async (req, res) => {
   try {
     const requests = await db.collection("teacherRequests").find().toArray();
     res.send(requests);
@@ -105,7 +157,7 @@ app.get("/api/teacherRequests", async (req, res) => {
 });
 
 // Update teacher request status
-app.patch("/api/teacherRequests/:id", async (req, res) => {
+app.patch("/teacherRequests/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const { status } = req.body; // expected: "accepted" or "rejected" or "pending"
@@ -121,7 +173,7 @@ app.patch("/api/teacherRequests/:id", async (req, res) => {
 
 // --- CLASSES ---
 // Create class (teacher adds class)
-app.post("/api/classes", async (req, res) => {
+app.post("/classes", async (req, res) => {
   try {
     const newClass = req.body;
     newClass.status = "pending";
@@ -135,7 +187,7 @@ app.post("/api/classes", async (req, res) => {
 });
 
 // Get all approved classes (for all users)
-app.get("/api/classes", async (req, res) => {
+app.get("/classes", async (req, res) => {
   try {
     const classes = await db.collection("classes").find({ status: "approved" }).toArray();
     res.send(classes);
@@ -145,7 +197,7 @@ app.get("/api/classes", async (req, res) => {
 });
 
 // Get class by ID
-app.get("/api/classes/:id", async (req, res) => {
+app.get("/classes/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const classObj = await db.collection("classes").findOne({ _id: new ObjectId(id) });
@@ -157,7 +209,7 @@ app.get("/api/classes/:id", async (req, res) => {
 });
 
 // Update class status (admin approves/rejects)
-app.patch("/api/classes/:id", async (req, res) => {
+app.patch("/classes/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const updatedData = req.body; // e.g., { status: "approved" }
@@ -173,7 +225,7 @@ app.patch("/api/classes/:id", async (req, res) => {
 });
 
 // Delete class by ID (teacher)
-app.delete("/api/classes/:id", async (req, res) => {
+app.delete("/classes/:id", async (req, res) => {
   try {
     const id = req.params.id;
     const result = await db.collection("classes").deleteOne({ _id: new ObjectId(id) });
@@ -186,7 +238,7 @@ app.delete("/api/classes/:id", async (req, res) => {
 
 // --- ENROLLMENTS ---
 // Enroll in class (student)
-app.post("/api/enrollments", async (req, res) => {
+app.post("/enrollments", async (req, res) => {
   try {
     const enrollment = req.body;
     enrollment.enrolledAt = new Date();
@@ -208,7 +260,7 @@ app.post("/api/enrollments", async (req, res) => {
 });
 
 // Get enrollments by studentId
-app.get("/api/enrollments/:studentId", async (req, res) => {
+app.get("/enrollments/:studentId", async (req, res) => {
   try {
     const studentId = req.params.studentId;
     const enrollments = await db
@@ -223,7 +275,7 @@ app.get("/api/enrollments/:studentId", async (req, res) => {
 
 // --- ASSIGNMENTS ---
 // Add assignment to class (teacher)
-app.post("/api/assignments", async (req, res) => {
+app.post("/assignments", async (req, res) => {
   try {
     const assignment = req.body;
     assignment.createdAt = new Date();
@@ -236,7 +288,7 @@ app.post("/api/assignments", async (req, res) => {
 });
 
 // Get assignments by classId
-app.get("/api/assignments/:classId", async (req, res) => {
+app.get("/assignments/:classId", async (req, res) => {
   try {
     const classId = req.params.classId;
     const assignments = await db
@@ -251,7 +303,7 @@ app.get("/api/assignments/:classId", async (req, res) => {
 
 // --- SUBMISSIONS ---
 // Submit assignment (student)
-app.post("/api/submissions", async (req, res) => {
+app.post("/submissions", async (req, res) => {
   try {
     const submission = req.body;
     submission.submittedAt = new Date();
@@ -274,7 +326,7 @@ app.post("/api/submissions", async (req, res) => {
 });
 
 // Get submissions by studentId and assignmentId
-app.get("/api/submissions", async (req, res) => {
+app.get("/submissions", async (req, res) => {
   try {
     const { studentId, assignmentId } = req.query;
     const query = {};
@@ -290,7 +342,7 @@ app.get("/api/submissions", async (req, res) => {
 
 // --- FEEDBACK ---
 // Submit feedback (student)
-app.post("/api/feedback", async (req, res) => {
+app.post("/feedback", async (req, res) => {
   try {
     const feedback = req.body;
     feedback.createdAt = new Date();
@@ -302,7 +354,7 @@ app.post("/api/feedback", async (req, res) => {
 });
 
 // Get all feedback
-app.get("/api/feedback", async (req, res) => {
+app.get("/feedback", async (req, res) => {
   try {
     const feedbacks = await db.collection("feedback").find().toArray();
     res.send(feedbacks);
@@ -313,7 +365,7 @@ app.get("/api/feedback", async (req, res) => {
 
 // --- PARTNERS ---
 // Add partner (admin)
-app.post("/api/partners", async (req, res) => {
+app.post("/partners", async (req, res) => {
   try {
     const partner = req.body;
     const result = await db.collection("partners").insertOne(partner);
@@ -324,7 +376,7 @@ app.post("/api/partners", async (req, res) => {
 });
 
 // Get all partners
-app.get("/api/partners", async (req, res) => {
+app.get("/partners", async (req, res) => {
   try {
     const partners = await db.collection("partners").find().toArray();
     res.send(partners);
