@@ -81,12 +81,25 @@ app.get("/users/:email", async (req, res) => {
   try {
     const email = req.params.email;
     const user = await db.collection("users").findOne({ email });
-    if (!user) return res.status(404).send({ error: "User not found" });
+
+    const DEFAULT_AVATAR = "https://i.ibb.co/9t9cYgW/avatar.png";
+
+    if (!user) {
+      return res.status(404).send({ error: "User not found" });
+    }
+
+    // Add fallback photo if missing
+    if (!user.photo) {
+      user.photo = DEFAULT_AVATAR;
+    }
+
     res.send(user);
   } catch (err) {
+    console.error("❌ Failed to get user:", err);
     res.status(500).send({ error: "Failed to get user" });
   }
 });
+
 
 // Update user by ID
 app.patch("/users/:id", async (req, res) => {
@@ -189,12 +202,22 @@ app.post("/classes", async (req, res) => {
 // Get all approved classes (for all users)
 app.get("/classes", async (req, res) => {
   try {
-    const classes = await db.collection("classes").find({ status: "approved" }).toArray();
+    const { teacherEmail } = req.query;
+    let query = {};
+
+    if (teacherEmail) {
+      query.teacherEmail = teacherEmail;
+    } else {
+      query.status = "approved"; // default for all users
+    }
+
+    const classes = await db.collection("classes").find(query).toArray();
     res.send(classes);
   } catch (err) {
     res.status(500).send({ error: "Failed to get classes" });
   }
 });
+
 
 // Get class by ID
 app.get("/classes/:id", async (req, res) => {
