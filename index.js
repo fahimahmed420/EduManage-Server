@@ -199,24 +199,22 @@ app.post("/classes", async (req, res) => {
   }
 });
 
-// Get all approved classes (for all users)
+// Get all classes (except for rejected one)
 app.get("/classes", async (req, res) => {
   try {
-    const { teacherEmail } = req.query;
-    let query = {};
-
-    if (teacherEmail) {
-      query.teacherEmail = teacherEmail;
-    } else {
-      query.status = "approved"; // default for all users
-    }
+    // Exclude rejected classes
+    const query = { status: { $ne: "rejected" } };
 
     const classes = await db.collection("classes").find(query).toArray();
+    // console.log(" Sending classes:", classes.length);
     res.send(classes);
   } catch (err) {
+    console.error("❌ Failed to get classes:", err);
     res.status(500).send({ error: "Failed to get classes" });
   }
 });
+
+
 
 
 // Get class by ID
@@ -407,6 +405,19 @@ app.get("/partners", async (req, res) => {
     res.status(500).send({ error: "Failed to get partners" });
   }
 });
+
+// payment
+app.post("/payments", async (req, res) => {
+    const paymentInfo = req.body;
+    try {
+        const result = await db.collection("payments").insertOne(paymentInfo);
+        res.status(201).send(result);
+    } catch (error) {
+        console.error("Failed to save payment:", error);
+        res.status(500).send({ error: "Failed to process payment." });
+    }
+});
+
 
 // --- SERVER START ---
 app.listen(port, () => {
