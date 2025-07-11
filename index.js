@@ -4,6 +4,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -230,6 +231,24 @@ app.get("/classes/:id", async (req, res) => {
   }
 });
 
+// Fetch multiple classes by IDs
+app.post("/classes/by-ids", async (req, res) => {
+  try {
+    const { ids } = req.body; // expects array of string IDs
+    const objectIds = ids.map((id) => new ObjectId(id));
+
+    const classes = await db.collection("classes").find({
+      _id: { $in: objectIds },
+    }).toArray();
+
+    res.send(classes);
+  } catch (err) {
+    console.error("❌ Failed to fetch classes by IDs:", err);
+    res.status(500).send({ error: "Failed to fetch classes" });
+  }
+});
+
+
 // Update class status (admin approves/rejects)
 app.patch("/classes/:id", async (req, res) => {
   try {
@@ -264,36 +283,43 @@ app.post("/enrollments", async (req, res) => {
   try {
     const enrollment = req.body;
     enrollment.enrolledAt = new Date();
-    enrollment.paymentStatus = "paid"; // for simplicity, assume paid
+
+    // Convert string to ObjectId
+    enrollment.classId = new ObjectId(enrollment.classId);
+
     const result = await db.collection("enrollments").insertOne(enrollment);
 
-    // Update class enrollment count
-    await db
-      .collection("classes")
-      .updateOne(
-        { _id: new ObjectId(enrollment.classId) },
-        { $inc: { totalEnrollment: 1 } }
-      );
+    // Increment totalEnrollment in classes
+    await db.collection("classes").updateOne(
+      { _id: enrollment.classId },
+      { $inc: { totalEnrollment: 1 } }
+    );
 
     res.status(201).send(result);
   } catch (err) {
+    console.error("❌ Enrollment failed:", err);
     res.status(500).send({ error: "Failed to enroll" });
   }
 });
+
 
 // Get enrollments by studentId
 app.get("/enrollments/:studentId", async (req, res) => {
   try {
     const studentId = req.params.studentId;
+
     const enrollments = await db
       .collection("enrollments")
-      .find({ studentId: new ObjectId(studentId) })
+      .find({ studentId: studentId }) // ✅ no ObjectId conversion
       .toArray();
+
     res.send(enrollments);
   } catch (err) {
+    console.error("Failed to get enrollments:", err);
     res.status(500).send({ error: "Failed to get enrollments" });
   }
 });
+
 
 // --- ASSIGNMENTS ---
 // Add assignment to class (teacher)
