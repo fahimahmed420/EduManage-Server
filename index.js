@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 require("dotenv").config();
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -417,6 +418,28 @@ app.post("/payments", async (req, res) => {
         res.status(500).send({ error: "Failed to process payment." });
     }
 });
+
+// payment intent
+app.post("/create-payment-intent", async (req, res) => {
+  const { amount } = req.body; // amount expected in USD
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount * 100, // convert dollars to cents
+      currency: "usd",
+      payment_method_types: ["card"],
+    });
+
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (err) {
+    console.error("Stripe error:", err);
+    res.status(500).send({ error: err.message });
+  }
+});
+
+
 
 
 // --- SERVER START ---
