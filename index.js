@@ -320,6 +320,16 @@ app.get("/enrollments/:studentId", async (req, res) => {
   }
 });
 
+// Count enrollments by classId
+app.get("/enrollments-count/:classId", async (req, res) => {
+  try {
+    const count = await db.collection("enrollments").countDocuments({ classId: new ObjectId(req.params.classId) });
+    res.send({ count });
+  } catch (err) {
+    res.status(500).send({ error: "Failed to count enrollments" });
+  }
+});
+
 
 // --- ASSIGNMENTS ---
 // Add assignment to class (teacher)
@@ -341,11 +351,22 @@ app.get("/assignments/:classId", async (req, res) => {
     const classId = req.params.classId;
     const assignments = await db
       .collection("assignments")
-      .find({ classId: new ObjectId(classId) })
+      .find({ classId })
       .toArray();
     res.send(assignments);
   } catch (err) {
     res.status(500).send({ error: "Failed to get assignments" });
+  }
+});
+
+
+// Count assignments by classId
+app.get("/assignments-count/:classId", async (req, res) => {
+  try {
+    const count = await db.collection("assignments").countDocuments({ classId: new ObjectId(req.params.classId) });
+    res.send({ count });
+  } catch (err) {
+    res.status(500).send({ error: "Failed to count assignments" });
   }
 });
 
@@ -355,10 +376,7 @@ app.post("/submissions", async (req, res) => {
   try {
     const submission = req.body;
     submission.submittedAt = new Date();
-
-    // Insert submission
     const result = await db.collection("submissions").insertOne(submission);
-
     // Increment assignment submissionCount
     await db
       .collection("assignments")
@@ -366,7 +384,6 @@ app.post("/submissions", async (req, res) => {
         { _id: new ObjectId(submission.assignmentId) },
         { $inc: { submissionCount: 1 } }
       );
-
     res.status(201).send(result);
   } catch (err) {
     res.status(500).send({ error: "Failed to submit assignment" });
@@ -387,6 +404,24 @@ app.get("/submissions", async (req, res) => {
     res.status(500).send({ error: "Failed to get submissions" });
   }
 });
+
+// Get all submissions for a specific classId
+app.get("/submissions/class/:classId", async (req, res) => {
+  try {
+    const classId = req.params.classId;
+
+    const submissions = await db.collection("submissions").find({ classId }).toArray();
+
+    res.send(submissions); // or res.send({ count: submissions.length }) if you only need count
+  } catch (err) {
+    console.error("❌ Failed to get class submissions:", err);
+    res.status(500).send({ error: "Failed to get submissions for class" });
+  }
+});
+
+
+
+
 
 // --- FEEDBACK ---
 // Submit feedback (student)
