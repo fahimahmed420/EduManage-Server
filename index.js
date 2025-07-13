@@ -118,6 +118,19 @@ app.patch("/users/:id", async (req, res) => {
   }
 });
 
+// Get user by ID
+app.get("/users/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const user = await db.collection("users").findOne({ _id: new ObjectId(id) });
+    if (!user) return res.status(404).send({ error: "User not found" });
+    res.send(user);
+  } catch (err) {
+    res.status(500).send({ error: "Failed to get user" });
+  }
+});
+
+
 // update user role
 app.patch("/users/role/:email", async (req, res) => {
   try {
@@ -216,6 +229,24 @@ app.get("/classes", async (req, res) => {
   }
 });
 
+// popular classes (sort by enrollment)
+app.get("/classes/popular", async (req, res) => {
+  try {
+    const query = {
+      status: { $ne: "rejected" },
+      totalEnrollment: { $exists: true, $gt: 0 }
+    };
+    const classes = await db.collection("classes")
+      .find(query)
+      .sort({ totalEnrollment: -1 })
+      .limit(3)
+      .toArray();
+    res.send(classes);
+  } catch (err) {
+    console.error("❌ Failed to fetch popular classes:", err);
+    res.status(500).send({ error: "Failed to fetch popular classes" });
+  }
+});
 
 
 
@@ -230,6 +261,8 @@ app.get("/classes/:id", async (req, res) => {
     res.status(500).send({ error: "Failed to get class" });
   }
 });
+
+
 
 // Fetch multiple classes by IDs
 app.post("/classes/by-ids", async (req, res) => {
@@ -276,6 +309,11 @@ app.delete("/classes/:id", async (req, res) => {
     res.status(500).send({ error: "Failed to delete class" });
   }
 });
+
+
+
+
+
 
 // --- ENROLLMENTS ---
 // Enroll in class (student)
@@ -374,21 +412,31 @@ app.get("/assignments-count/:classId", async (req, res) => {
 // Submit assignment (student)
 app.post("/submissions", async (req, res) => {
   try {
-    const submission = req.body;
-    submission.submittedAt = new Date();
-    const result = await db.collection("submissions").insertOne(submission);
-    // Increment assignment submissionCount
-    await db
-      .collection("assignments")
-      .updateOne(
-        { _id: new ObjectId(submission.assignmentId) },
-        { $inc: { submissionCount: 1 } }
-      );
-    res.status(201).send(result);
+    const { studentId, assignmentId, classId, submissionLink } = req.body;
+
+    // Check if submission already exists for this student & assignment
+    const existing = await db.collection("submissions").findOne({ studentId, assignmentId });
+
+    if (existing) {
+      return res.status(400).json({ error: "You have already submitted this assignment." });
+    }
+
+    const newSubmission = {
+      studentId,
+      assignmentId,
+      classId,
+      submissionLink,
+      createdAt: new Date(),
+    };
+
+    const result = await db.collection("submissions").insertOne(newSubmission);
+    res.status(201).json(result);
   } catch (err) {
-    res.status(500).send({ error: "Failed to submit assignment" });
+    console.error(err);
+    res.status(500).json({ error: "Failed to submit assignment." });
   }
 });
+
 
 // Get submissions by studentId and assignmentId
 app.get("/submissions", async (req, res) => {
@@ -427,14 +475,29 @@ app.get("/submissions/class/:classId", async (req, res) => {
 // Submit feedback (student)
 app.post("/feedback", async (req, res) => {
   try {
-    const feedback = req.body;
-    feedback.createdAt = new Date();
+    const { studentId, classId, description, rating } = req.body;
+
+    // Check if feedback already exists
+    const existing = await db.collection("feedback").findOne({ studentId, classId });
+    if (existing) {
+      return res.status(400).send({ error: "You have already submitted feedback for this class." });
+    }
+
+    const feedback = {
+      studentId,
+      classId,
+      description,
+      rating,
+      createdAt: new Date(),
+    };
+
     const result = await db.collection("feedback").insertOne(feedback);
     res.status(201).send(result);
   } catch (err) {
     res.status(500).send({ error: "Failed to submit feedback" });
   }
 });
+
 
 // Get all feedback
 app.get("/feedback", async (req, res) => {
@@ -445,6 +508,21 @@ app.get("/feedback", async (req, res) => {
     res.status(500).send({ error: "Failed to get feedback" });
   }
 });
+
+// feedback check
+app.get("/feedback/check", async (req, res) => {
+  const { studentId, classId } = req.query;
+  if (!studentId || !classId) {
+    return res.status(400).send({ error: "Missing parameters" });
+  }
+  try {
+    const existing = await db.collection("feedback").findOne({ studentId, classId });
+    res.send({ exists: !!existing });
+  } catch (err) {
+    res.status(500).send({ error: "Failed to check feedback" });
+  }
+});
+
 
 // --- PARTNERS ---
 // Add partner (admin)
