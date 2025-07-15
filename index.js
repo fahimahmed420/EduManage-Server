@@ -1,15 +1,30 @@
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const jwt = require("jsonwebtoken");
 require("dotenv").config();
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+
+// JWT Middleware
+function verifyJWT(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).send({ error: "Unauthorized access" });
+
+  const token = authHeader.split(" ")[1];
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (err) return res.status(403).send({ error: "Forbidden access" });
+    req.user = decoded;
+    next();
+  });
+}
 
 // Connect to MongoDB
 const client = new MongoClient(process.env.MONGO_URI, {
@@ -42,7 +57,21 @@ async function connectToDB() {
 }
 connectToDB();
 
-// --- USERS ---
+// Generate Token
+app.post("/jwt", async (req, res) => {
+  const user = req.body;
+
+  if (!user || !user.email) {
+    return res.status(400).send({ error: "Email is required to generate token" });
+  }
+
+  const token = jwt.sign(user, JWT_SECRET, {
+    expiresIn: "7d",
+  });
+
+  res.send({ token });
+});
+
 // Create user
 app.post("/users", async (req, res) => {
   try {
@@ -74,8 +103,6 @@ app.get("/users", async (req, res) => {
     res.status(500).send({ error: "Failed to fetch users" });
   }
 });
-
-
 
 
 // Get user by email
@@ -138,26 +165,31 @@ app.patch("/users/role/:email", async (req, res) => {
     const newRole = req.body.role;
 
     if (!newRole) {
-      return res.status(400).send({ error: "Role is required in request body." });
+      return res.status(400).json({ error: "Role is required in request body." });
     }
 
-    const result = await db
-      .collection("users")
-      .updateOne(
-        { email },
-        { $set: { role: newRole } }
-      );
+    const user = await db.collection("users").findOne({ email });
 
-    if (result.modifiedCount === 0) {
-      return res.status(404).send({ error: "User not found or role not changed." });
+    if (!user) {
+      return res.status(404).json({ error: "User not found." });
     }
+
+    if (user.role === newRole) {
+      return res.status(200).json({ message: `User already has role '${newRole}'.` });
+    }
+
+    const result = await db.collection("users").updateOne(
+      { email },
+      { $set: { role: newRole } }
+    );
 
     res.send({ success: true, message: `Role updated to ${newRole}` });
   } catch (error) {
     console.error("Error updating role:", error);
-    res.status(500).send({ error: "Failed to update user role" });
+    res.status(500).json({ error: "Failed to update user role." });
   }
 });
+
 
 
 // --- TEACHER REQUESTS ---
@@ -217,17 +249,24 @@ app.post("/classes", async (req, res) => {
 // Get all classes (except for rejected one)
 app.get("/classes", async (req, res) => {
   try {
-    // Exclude rejected classes
+    const { teacherEmail } = req.query;
+
+    // Base query excludes rejected classes
     const query = { status: { $ne: "rejected" } };
 
+    // Add teacherEmail filter if present
+    if (teacherEmail) {
+      query.teacherEmail = teacherEmail;
+    }
+
     const classes = await db.collection("classes").find(query).toArray();
-    // console.log(" Sending classes:", classes.length);
     res.send(classes);
   } catch (err) {
     console.error("❌ Failed to get classes:", err);
     res.status(500).send({ error: "Failed to get classes" });
   }
 });
+
 
 // popular classes (sort by enrollment)
 app.get("/classes/popular", async (req, res) => {
@@ -312,9 +351,6 @@ app.delete("/classes/:id", async (req, res) => {
 
 
 
-
-
-
 // --- ENROLLMENTS ---
 // Enroll in class (student)
 app.post("/enrollments", async (req, res) => {
@@ -322,12 +358,13 @@ app.post("/enrollments", async (req, res) => {
     const enrollment = req.body;
     enrollment.enrolledAt = new Date();
 
-    // Convert string to ObjectId
+    // Convert to ObjectId
     enrollment.classId = new ObjectId(enrollment.classId);
+    enrollment.studentId = new ObjectId(enrollment.studentId);
 
     const result = await db.collection("enrollments").insertOne(enrollment);
 
-    // Increment totalEnrollment in classes
+    // Increment totalEnrollment in the class
     await db.collection("classes").updateOne(
       { _id: enrollment.classId },
       { $inc: { totalEnrollment: 1 } }
@@ -339,6 +376,7 @@ app.post("/enrollments", async (req, res) => {
     res.status(500).send({ error: "Failed to enroll" });
   }
 });
+
 
 
 // Get enrollments by studentId
@@ -548,23 +586,23 @@ app.get("/partners", async (req, res) => {
 
 // payment
 app.post("/payments", async (req, res) => {
-    const paymentInfo = req.body;
-    try {
-        const result = await db.collection("payments").insertOne(paymentInfo);
-        res.status(201).send(result);
-    } catch (error) {
-        console.error("Failed to save payment:", error);
-        res.status(500).send({ error: "Failed to process payment." });
-    }
+  const paymentInfo = req.body;
+  try {
+    const result = await db.collection("payments").insertOne(paymentInfo);
+    res.status(201).send(result);
+  } catch (error) {
+    console.error("Failed to save payment:", error);
+    res.status(500).send({ error: "Failed to process payment." });
+  }
 });
 
 // payment intent
 app.post("/create-payment-intent", async (req, res) => {
-  const { amount } = req.body; // amount expected in USD
+  const { amount } = req.body;
 
   try {
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount * 100, // convert dollars to cents
+      amount: amount * 100,
       currency: "usd",
       payment_method_types: ["card"],
     });
@@ -578,7 +616,17 @@ app.post("/create-payment-intent", async (req, res) => {
   }
 });
 
-
+// Get payments by user email
+app.get("/payments/:email", async (req, res) => {
+  try {
+    const email = req.params.email;
+    const payments = await db.collection("payments").find({ email }).toArray();
+    res.send(payments);
+  } catch (err) {
+    console.error("❌ Failed to get payments:", err);
+    res.status(500).send({ error: "Failed to get payments" });
+  }
+});
 
 
 // --- SERVER START ---
