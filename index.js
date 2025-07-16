@@ -1,30 +1,14 @@
 const express = require("express");
 const cors = require("cors");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
-const JWT_SECRET = process.env.JWT_SECRET;
-
 const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
 
-// JWT Middleware
-function verifyJWT(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).send({ error: "Unauthorized access" });
-
-  const token = authHeader.split(" ")[1];
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(403).send({ error: "Forbidden access" });
-    req.user = decoded;
-    next();
-  });
-}
 
 // Connect to MongoDB
 const client = new MongoClient(process.env.MONGO_URI, {
@@ -57,20 +41,6 @@ async function connectToDB() {
 }
 connectToDB();
 
-// Generate Token
-app.post("/jwt", async (req, res) => {
-  const user = req.body;
-
-  if (!user || !user.email) {
-    return res.status(400).send({ error: "Email is required to generate token" });
-  }
-
-  const token = jwt.sign(user, JWT_SECRET, {
-    expiresIn: "7d",
-  });
-
-  res.send({ token });
-});
 
 // Create user
 app.post("/users", async (req, res) => {
@@ -95,8 +65,6 @@ app.get("/users", async (req, res) => {
         { email: { $regex: regex } }
       ]
     }).toArray();
-
-    console.log("Sending users:", users.length);
     res.send(users);
   } catch (err) {
     console.error("Failed to get users:", err);
@@ -587,28 +555,6 @@ app.get("/feedback/check", async (req, res) => {
 });
 
 
-// --- PARTNERS ---
-// Add partner (admin)
-app.post("/partners", async (req, res) => {
-  try {
-    const partner = req.body;
-    const result = await db.collection("partners").insertOne(partner);
-    res.status(201).send(result);
-  } catch (err) {
-    res.status(500).send({ error: "Failed to add partner" });
-  }
-});
-
-// Get all partners
-app.get("/partners", async (req, res) => {
-  try {
-    const partners = await db.collection("partners").find().toArray();
-    res.send(partners);
-  } catch (err) {
-    res.status(500).send({ error: "Failed to get partners" });
-  }
-});
-
 // payment
 app.post("/payments", async (req, res) => {
   const paymentInfo = req.body;
@@ -655,6 +601,7 @@ app.get("/payments/:email", async (req, res) => {
 
 
 // --- SERVER START ---
+app.get("/", (req, res) => res.send("Server running!"));
 app.listen(port, () => {
   console.log(`🚀 Server is running on port ${port}`);
 });
