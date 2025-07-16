@@ -386,7 +386,7 @@ app.get("/enrollments/:studentId", async (req, res) => {
 
     const enrollments = await db
       .collection("enrollments")
-      .find({ studentId: studentId }) // ✅ no ObjectId conversion
+      .find({ studentId: new ObjectId(studentId) })
       .toArray();
 
     res.send(enrollments);
