@@ -249,23 +249,48 @@ app.post("/classes", async (req, res) => {
 // Get all classes (except for rejected one)
 app.get("/classes", async (req, res) => {
   try {
-    const { teacherEmail } = req.query;
+    const all = req.query.all === "true";
 
-    // Base query excludes rejected classes
-    const query = { status: { $ne: "rejected" } };
-
-    // Add teacherEmail filter if present
-    if (teacherEmail) {
-      query.teacherEmail = teacherEmail;
+    if (all) {
+      const classes = await db.collection("classes").find({}).toArray();
+      return res.json(classes);
     }
 
-    const classes = await db.collection("classes").find(query).toArray();
-    res.send(classes);
-  } catch (err) {
-    console.error("❌ Failed to get classes:", err);
-    res.status(500).send({ error: "Failed to get classes" });
+    const { page = 1, limit = 8, search = "" } = req.query;
+
+    const pageNumber = parseInt(page);
+    const limitNumber = parseInt(limit);
+    const skip = (pageNumber - 1) * limitNumber;
+
+    // Sanitize search term
+    const regex = new RegExp(search, "i");
+
+    // Filter out rejected classes and search by title
+    const query = {
+      status: { $ne: "rejected" },
+      title: { $regex: regex },
+    };
+
+    // Count total matching classes
+    const total = await db.collection("classes").countDocuments(query);
+
+    // Get paginated results
+    const classes = await db.collection("classes")
+      .find(query)
+      .skip(skip)
+      .limit(limitNumber)
+      .toArray();
+
+    // Return results
+    res.json({ classes, total });
+  } catch (error) {
+    console.error("Error fetching classes:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
+
+
+
 
 
 // popular classes (sort by enrollment)
