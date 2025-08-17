@@ -23,7 +23,7 @@ let db;
 
 async function connectToDB() {
   try {
-    await client.connect();
+    // await client.connect();
     db = client.db("eduManage");
 
     // Create indexes
@@ -271,7 +271,7 @@ app.get("/classes/popular", async (req, res) => {
     const classes = await db.collection("classes")
       .find(query)
       .sort({ totalEnrollment: -1 })
-      .limit(3)
+      .limit(4)
       .toArray();
     res.send(classes);
   } catch (err) {
