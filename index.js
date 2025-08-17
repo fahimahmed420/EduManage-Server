@@ -224,39 +224,48 @@ app.get("/classes", async (req, res) => {
       return res.json(classes);
     }
 
-    const { page = 1, limit = 8, search = "" } = req.query;
+    const { page = 1, limit = 8, search = "", sort = "" } = req.query;
 
-    const pageNumber = parseInt(page);
-    const limitNumber = parseInt(limit);
+    const pageNumber = Math.max(parseInt(page), 1);
+    const limitNumber = Math.max(parseInt(limit), 1);
     const skip = (pageNumber - 1) * limitNumber;
-
-    // Sanitize search term
-    const regex = new RegExp(search, "i");
 
     // Filter out rejected classes and search by title
     const query = {
       status: { $ne: "rejected" },
-      title: { $regex: regex },
+      title: { $regex: new RegExp(search, "i") },
     };
 
     // Count total matching classes
     const total = await db.collection("classes").countDocuments(query);
 
-    // Get paginated results
+    // Build sort object
+    let sortObj;
+    switch (sort) {
+      case "asc":
+        sortObj = { price: 1 };
+        break;
+      case "desc":
+        sortObj = { price: -1 };
+        break;
+      default:
+        sortObj = { createdAt: -1 }; // default: newest first
+    }
+
+    // Fetch paginated classes
     const classes = await db.collection("classes")
       .find(query)
+      .sort(sortObj)
       .skip(skip)
       .limit(limitNumber)
       .toArray();
 
-    // Return results
-    res.json({ classes, total });
+    res.json({ classes, total, page: pageNumber, limit: limitNumber });
   } catch (error) {
     console.error("Error fetching classes:", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 });
-
 
 
 
